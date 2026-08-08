@@ -1,0 +1,20 @@
+# application-dev.yml 템플릿 (커밋 대상).
+# 이 파일을 application-dev.yml 로 복사한 뒤 실제 Supabase 값을 채우세요.
+#   cp application-dev.yml.example application-dev.yml
+# application-dev.yml 자체는 .gitignore 처리되어 커밋되지 않습니다.
+spring:
+  datasource:
+    url: ${SUPABASE_DB_URL:jdbc:postgresql://<PROJECT>.supabase.co:5432/postgres}
+    username: ${SUPABASE_DB_USER:postgres}
+    password: ${SUPABASE_DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  sql:
+    init:
+      mode: never

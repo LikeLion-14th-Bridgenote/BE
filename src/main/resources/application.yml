@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: bridgenote
+  profiles:
+    active: dev
+
+# realtime 모듈이 호출하는 AI 서버(bridgenote-AI) 주소
+bridgenote:
+  ai:
+    server-url: ${AI_SERVER_URL:http://localhost:8000}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: when-authorized
