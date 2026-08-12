@@ -3,11 +3,21 @@ spring:
     name: bridgenote
   profiles:
     active: dev
+  jackson:
+    # 요청/응답 JSON은 snake_case (예: expected_count). Java는 camelCase로 작성.
+    property-naming-strategy: SNAKE_CASE
 
 # realtime 모듈이 호출하는 AI 서버(bridgenote-AI) 주소
 bridgenote:
   ai:
     server-url: ${AI_SERVER_URL:http://localhost:8000}
+  # 회의 초대 링크 base URL. 형식: {base}/meetings/{id}
+  invite-base-url: ${INVITE_BASE_URL:http://localhost:8080}
+
+# Supabase Auth JWT 검증. 현재 프로젝트 서명키가 비대칭(ES256)이라 공개 JWKS로 검증한다.
+# (JWKS는 공개 정보라 커밋해도 됨. 프로젝트가 다르면 env SUPABASE_JWKS_URI 로 덮어쓰기)
+supabase:
+  jwks-uri: ${SUPABASE_JWKS_URI:https://gvydjaogqafugbcmufdn.supabase.co/auth/v1/.well-known/jwks.json}
 
 springdoc:
   swagger-ui:
