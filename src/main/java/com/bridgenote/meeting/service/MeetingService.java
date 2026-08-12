@@ -63,7 +63,8 @@ public class MeetingService {
 				.build();
 
 		Meeting saved = meetingRepository.save(meeting);
-		String inviteUrl = inviteBaseUrl + "/meetings/" + saved.getId();
+		// 초대 링크 하나로 참가 가능하도록 code를 쿼리로 포함 (프론트가 id+code 파싱 → join 호출)
+		String inviteUrl = inviteBaseUrl + "/meetings/" + saved.getId() + "?code=" + saved.getInviteCode();
 		return MeetingCreateResDto.from(saved, inviteUrl);
 	}
 
