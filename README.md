@@ -13,7 +13,7 @@
 | Build | Gradle (Wrapper) |
 | DB | Supabase (PostgreSQL + pgvector) |
 | Auth | Supabase Auth 연동 |
-| Realtime | WebSocket (STOMP) |
+| Realtime | WebSocket (raw, 메시지 `type`으로 구분) |
 | STT | Deepgram (Agora 미사용 확정) |
 | Docs | Springdoc OpenAPI (Swagger UI) |
 
