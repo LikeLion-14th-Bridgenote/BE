@@ -16,6 +16,8 @@ import com.bridgenote.meeting.repository.MeetingRepository;
 import com.bridgenote.participant.domain.Participant;
 import com.bridgenote.participant.dto.ParticipantResDto;
 import com.bridgenote.participant.repository.ParticipantRepository;
+import com.bridgenote.realtime.dto.MeetingEndedMessage;
+import com.bridgenote.realtime.session.WebSocketSessionRegistry;
 import com.bridgenote.user.domain.User;
 import com.bridgenote.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,8 @@ public class MeetingService {
 	private final ParticipantRepository participantRepository;
 	// 임시 email 브릿지용(JWT email ↔ 수민 User). id 정렬 후 profileId 조회로 전환 예정.
 	private final UserRepository userRepository;
+	// 회의 종료 시 참가자 전원에게 meeting_ended 브로드캐스트
+	private final WebSocketSessionRegistry sessionRegistry;
 
 	@Value("${bridgenote.invite-base-url}")
 	private String inviteBaseUrl;
@@ -178,6 +182,8 @@ public class MeetingService {
 		}
 
 		meeting.end(Instant.now());
+		// 연결 중인 참가자 전원에게 종료 알림 (프론트가 즉시 회의록 대기 화면으로 전환)
+		sessionRegistry.broadcast(meetingId, MeetingEndedMessage.of(meetingId, meeting.getEndedAt()));
 		// TODO: 회의록 생성 파이프라인 트리거 (AI 서버 /ai/minutes 배치 호출) — realtime/AI 연동 시 구현
 		return MeetingEndResDto.from(meeting);
 	}
