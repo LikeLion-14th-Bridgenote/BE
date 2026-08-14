@@ -3,6 +3,7 @@ package com.bridgenote.meeting.service;
 import com.bridgenote.common.exception.BusinessException;
 import com.bridgenote.common.jwt.AuthUser;
 import com.bridgenote.meeting.domain.Meeting;
+import com.bridgenote.meeting.domain.MeetingStatus;
 import com.bridgenote.meeting.dto.MeetingConsentReqDto;
 import com.bridgenote.meeting.dto.MeetingConsentResDto;
 import com.bridgenote.meeting.dto.MeetingCreateReqDto;
@@ -187,6 +188,25 @@ public class MeetingService {
 		// TODO: 회의록 생성 파이프라인 트리거 (AI 서버 /ai/minutes 배치 호출) — realtime/AI 연동 시 구현
 		return MeetingEndResDto.from(meeting);
 	}
+
+	/**
+	 * 참가자 WS 접속 시 회의 상태 처리(핸들러가 호출).
+	 * 없으면 NOT_FOUND, ENDED면 접속 거부용 ENDED, WAITING이면 첫 접속에서 LIVE로 전환하고 STARTED, 이미 진행 중이면 LIVE.
+	 */
+	@Transactional
+	public ConnectResult onParticipantConnect(String meetingId) {
+		Meeting meeting = meetingRepository.findById(meetingId).orElse(null);
+		if (meeting == null) {
+			return ConnectResult.NOT_FOUND;
+		}
+		if (meeting.getStatus() == MeetingStatus.ENDED) {
+			return ConnectResult.ENDED;
+		}
+		return meeting.start(Instant.now()) ? ConnectResult.STARTED : ConnectResult.LIVE;
+	}
+
+	/** WS 접속 시 회의 상태 판정 결과. */
+	public enum ConnectResult { STARTED, LIVE, ENDED, NOT_FOUND }
 
 	private String generateUniqueInviteCode() {
 		for (int i = 0; i < MAX_RETRY; i++) {

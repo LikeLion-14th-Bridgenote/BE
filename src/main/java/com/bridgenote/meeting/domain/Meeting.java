@@ -76,6 +76,16 @@ public class Meeting extends BaseTimeEntity {
 		}
 	}
 
+	/** 회의 시작 — WAITING이면 LIVE로 전환하고 시작 시각 기록. 전환됐으면(=첫 접속) true. */
+	public boolean start(Instant at) {
+		if (this.status == MeetingStatus.WAITING) {
+			this.status = MeetingStatus.LIVE;
+			this.startedAt = at;
+			return true;
+		}
+		return false;
+	}
+
 	/** 회의 종료 — 상태를 ENDED로, 종료 시각 기록. 이미 종료된 회의면 그대로 둔다(멱등). */
 	public void end(Instant at) {
 		if (this.status != MeetingStatus.ENDED) {
