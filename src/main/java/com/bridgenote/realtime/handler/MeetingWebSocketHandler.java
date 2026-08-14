@@ -1,9 +1,10 @@
 package com.bridgenote.realtime.handler;
 
 import com.bridgenote.common.jwt.AuthUser;
-import com.bridgenote.meeting.repository.MeetingRepository;
+import com.bridgenote.meeting.service.MeetingService;
 import com.bridgenote.participant.repository.ParticipantRepository;
 import com.bridgenote.realtime.dto.AudioChunkMessage;
+import com.bridgenote.realtime.dto.MeetingStartedMessage;
 import com.bridgenote.realtime.dto.ParticipantJoinedMessage;
 import com.bridgenote.realtime.dto.ParticipantLeftMessage;
 import com.bridgenote.realtime.dto.SpeakerSwitchMessage;
@@ -19,11 +20,13 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.Map;
 
 /**
  * 회의방 실시간 채널 핸들러.
- * 연결 시 토큰/회의 존재를 검증하고(4401/4404), 통과하면 세션을 등록한다.
+ * 연결 시 토큰/회의 상태를 검증한다(4401 인증 실패 / 4404 회의 없음 / 4409 종료된 회의).
+ * 첫 참가자 접속 시 회의를 WAITING→LIVE로 전환하고, 통과하면 세션을 등록한다.
  * 연결 후에는 메시지 {@code type}으로 구분한다: speaker_switch(발화자 전환) / audio_chunk(오디오→STT).
  */
 @Slf4j
@@ -35,8 +38,10 @@ public class MeetingWebSocketHandler extends TextWebSocketHandler {
 	private static final CloseStatus UNAUTHORIZED = new CloseStatus(4401, "인증 실패");
 	/** 회의 없음 */
 	private static final CloseStatus MEETING_NOT_FOUND = new CloseStatus(4404, "회의 없음");
+	/** 이미 종료된 회의 */
+	private static final CloseStatus MEETING_ENDED = new CloseStatus(4409, "회의 종료됨");
 
-	private final MeetingRepository meetingRepository;
+	private final MeetingService meetingService;
 	private final ParticipantRepository participantRepository;
 	private final WebSocketSessionRegistry sessionRegistry;
 	private final MeetingSpeakerState speakerState;
@@ -52,14 +57,28 @@ public class MeetingWebSocketHandler extends TextWebSocketHandler {
 			session.close(UNAUTHORIZED);
 			return;
 		}
-		if (meetingId == null || meetingId.isBlank() || !meetingRepository.existsById(meetingId)) {
+		if (meetingId == null || meetingId.isBlank()) {
 			session.close(MEETING_NOT_FOUND);
 			return;
 		}
+
+		// 회의 상태 판정 + 첫 접속이면 WAITING→LIVE 전환
+		MeetingService.ConnectResult result = meetingService.onParticipantConnect(meetingId);
+		switch (result) {
+			case NOT_FOUND -> { session.close(MEETING_NOT_FOUND); return; }
+			case ENDED -> { session.close(MEETING_ENDED); return; }
+			default -> { /* LIVE / STARTED → 진행 */ }
+		}
+
 		// 기존 참가자들에게 입장 알림 (본인은 아직 세션 미등록이라 자기 이벤트는 안 받음)
 		participantRepository.findByMeetingIdAndProfileId(meetingId, user.id())
 				.ifPresent(p -> sessionRegistry.broadcast(meetingId, ParticipantJoinedMessage.of(p)));
 		sessionRegistry.add(meetingId, session);
+
+		// 첫 참가자 접속으로 회의가 시작됐으면 본인 포함 전원에게 상태 전환 알림
+		if (result == MeetingService.ConnectResult.STARTED) {
+			sessionRegistry.broadcast(meetingId, MeetingStartedMessage.of(meetingId, Instant.now()));
+		}
 	}
 
 	@Override
