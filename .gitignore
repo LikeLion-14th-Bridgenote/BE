@@ -39,6 +39,7 @@ out/
 ### Bridgenote — 민감 정보/환경설정 (커밋 금지) ###
 # 프로필별 설정(application-dev.yml 등)은 커밋 금지. 단, 팀 공유용 *.example 은 추적.
 application-*.yml
+application-dev.yml
 !application-*.yml.example
 .env
 .env.*
