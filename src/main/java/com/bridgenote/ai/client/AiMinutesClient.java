@@ -28,9 +28,10 @@ public class AiMinutesClient {
 	private final WebClient webClient;
 	private final ObjectMapper objectMapper;
 
-	public AiMinutesClient(WebClient.Builder builder, ObjectMapper objectMapper,
+	public AiMinutesClient(ObjectMapper objectMapper,
 						   @Value("${bridgenote.ai.server-url}") String serverUrl) {
-		this.webClient = builder.baseUrl(serverUrl).build();
+		// WebClient.builder() 정적 팩토리 사용(주입식 WebClient.Builder 빈은 이 webmvc 앱에 없음).
+		this.webClient = WebClient.builder().baseUrl(serverUrl).build();
 		this.objectMapper = objectMapper;
 	}
 

@@ -5,8 +5,12 @@ import com.bridgenote.ai.dto.AnalyzeRequest;
 import com.bridgenote.ai.dto.AnalyzeResponse;
 import com.bridgenote.participant.domain.Participant;
 import com.bridgenote.participant.repository.ParticipantRepository;
+import com.bridgenote.realtime.domain.CulturalNote;
+import com.bridgenote.realtime.domain.UtteranceTranslation;
 import com.bridgenote.realtime.dto.TranslationMessage;
 import com.bridgenote.realtime.dto.WarningMessage;
+import com.bridgenote.realtime.repository.CulturalNoteRepository;
+import com.bridgenote.realtime.repository.UtteranceTranslationRepository;
 import com.bridgenote.realtime.session.WebSocketSessionRegistry;
 import com.bridgenote.user.domain.User;
 import com.bridgenote.user.repository.UserRepository;
@@ -38,6 +42,9 @@ public class UtteranceAnalyzer {
 	private final UserRepository userRepository;
 	private final AiAnalyzeClient aiAnalyzeClient;
 	private final WebSocketSessionRegistry sessionRegistry;
+	// 회의록(전사·문화 가이드) 재열람을 위한 저장소
+	private final CulturalNoteRepository culturalNoteRepository;
+	private final UtteranceTranslationRepository utteranceTranslationRepository;
 
 	/** 확정 발화 1건을 AI에 분석 요청하고, 결과(번역·경고)를 회의 전원에게 push한다. */
 	public void analyzeAndBroadcast(String meetingId, String sentenceId,
@@ -78,26 +85,56 @@ public class UtteranceAnalyzer {
 				listeners,
 				List.of());                 // context: 직전 발화 미전달(1차)
 
-		aiAnalyzeClient.analyze(request, resp -> broadcast(meetingId, resp));
+		aiAnalyzeClient.analyze(request, resp -> onAnalyzed(meetingId, speakerIndex, resp));
 	}
 
-	/** AI 응답을 WS 메시지로 변환해 브로드캐스트. */
-	private void broadcast(String meetingId, AnalyzeResponse resp) {
+	/** AI 응답을 저장(전사 번역·각주)하고 WS 메시지로 브로드캐스트한다. (비동기 콜백) */
+	private void onAnalyzed(String meetingId, Integer speakerIndex, AnalyzeResponse resp) {
 		if (resp.translations() != null) {
-			// 번역은 언어 단위 브로드캐스트(클라가 자기 언어만 표시). 같은 lang은 1회만, 빈 텍스트는 스킵.
-			Set<String> sentLangs = new HashSet<>();
+			// 번역은 언어 단위(클라가 자기 언어만 표시). 같은 lang은 1회만, 빈 텍스트는 스킵.
+			Set<String> langs = new HashSet<>();
 			for (AnalyzeResponse.Translation t : resp.translations()) {
-				if (t.text() == null || t.text().isBlank() || !sentLangs.add(t.lang())) {
+				if (t.text() == null || t.text().isBlank() || !langs.add(t.lang())) {
 					continue;
 				}
+				saveTranslation(meetingId, resp.sentenceId(), t.lang(), t.text());
 				sessionRegistry.broadcast(meetingId,
 						TranslationMessage.of(resp.sentenceId(), t.lang(), t.text()));
 			}
 		}
 
 		if (resp.hasRisk()) {
-			sessionRegistry.broadcast(meetingId,
-					WarningMessage.of(resp.sentenceId(), resp.riskLevel(), resp.noteType()));
+			saveCulturalNote(meetingId, speakerIndex, resp);
+			sessionRegistry.broadcast(meetingId, WarningMessage.from(resp));
+		}
+	}
+
+	/** 발화 번역 저장(중복 lang은 스킵). 저장 실패해도 실시간 파이프라인엔 영향 없도록 방어. */
+	private void saveTranslation(String meetingId, String sentenceId, String lang, String text) {
+		try {
+			if (utteranceTranslationRepository.existsBySentenceIdAndLang(sentenceId, lang)) {
+				return;
+			}
+			utteranceTranslationRepository.save(UtteranceTranslation.builder()
+					.meetingId(meetingId).sentenceId(sentenceId).lang(lang).text(text).build());
+		} catch (RuntimeException e) {
+			log.warn("번역 저장 실패 sentence={} lang={}: {}", sentenceId, lang, e.toString());
+		}
+	}
+
+	/** 문화 각주 저장(발화당 1건). */
+	private void saveCulturalNote(String meetingId, Integer speakerIndex, AnalyzeResponse resp) {
+		try {
+			if (culturalNoteRepository.existsBySentenceId(resp.sentenceId())) {
+				return;
+			}
+			culturalNoteRepository.save(CulturalNote.builder()
+					.meetingId(meetingId).sentenceId(resp.sentenceId()).speakerIndex(speakerIndex)
+					.riskLevel(resp.riskLevel()).noteType(resp.noteType())
+					.speakerIntent(resp.speakerIntent()).listenerMisread(resp.listenerMisread())
+					.advice(resp.advice()).rewriteText(resp.rewriteText()).build());
+		} catch (RuntimeException e) {
+			log.warn("각주 저장 실패 sentence={}: {}", resp.sentenceId(), e.toString());
 		}
 	}
 
