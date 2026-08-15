@@ -28,6 +28,7 @@ public class SttService {
 	private final WebSocketSessionRegistry sessionRegistry;
 	private final MeetingSpeakerState speakerState;
 	private final UtteranceRepository utteranceRepository;
+	private final UtteranceAnalyzer utteranceAnalyzer;
 
 	/** WS 핸들러가 audio_chunk 수신 시 호출. */
 	public void submitAudio(String meetingId, Integer speakerIndex, Long seq, String base64Data) {
@@ -69,7 +70,8 @@ public class SttService {
 					.isFinal(true)
 					.spokenAt(Instant.now())
 					.build());
-			// TODO(2): AI 서버 /ai/analyze 호출 → translation·warning 브로드캐스트 + 저장
+			// AI /ai/analyze 비동기 호출 → translation·warning 브로드캐스트 (실패해도 자막 파이프라인엔 영향 없음)
+			utteranceAnalyzer.analyzeAndBroadcast(meetingId, sentenceId, sourceLang, text, speakerIndex);
 		}
 	}
 
