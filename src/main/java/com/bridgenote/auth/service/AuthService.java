@@ -1,9 +1,11 @@
 package com.bridgenote.auth.service;
 
 import com.bridgenote.auth.dto.*;
+import com.bridgenote.common.exception.BusinessException;
 import com.bridgenote.user.domain.User;
 import com.bridgenote.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.bridgenote.auth.dto.SupabaseLoginResponse;
@@ -21,9 +23,8 @@ public class AuthService {
 
         // 1. 우리 DB에서 이메일 중복 확인
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException(
-                    "이미 존재하는 이메일입니다."
-            );
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "이미 가입된 이메일입니다.");
         }
 
         // 2. Supabase Auth에 회원 생성
@@ -36,9 +37,8 @@ public class AuthService {
         if (authResponse == null ||
                 authResponse.getUser() == null) {
 
-            throw new IllegalStateException(
-                    "Supabase 회원가입에 실패했습니다."
-            );
+            throw new BusinessException(HttpStatus.BAD_GATEWAY,
+                    "회원가입에 실패했습니다. 잠시 후 다시 시도해주세요.");
         }
 
         // Supabase Auth에서 생성된 UUID
@@ -75,17 +75,15 @@ public class AuthService {
                 authResponse.getUser() == null ||
                 authResponse.getAccessToken() == null) {
 
-            throw new IllegalStateException(
-                    "Supabase 로그인에 실패했습니다."
-            );
+            throw new BusinessException(HttpStatus.BAD_GATEWAY,
+                    "로그인에 실패했습니다. 잠시 후 다시 시도해주세요.");
         }
 
         // 2. BridgeNote users 테이블에서 프로필 조회
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "프로필 정보가 존재하지 않습니다."
-                        )
+                        new BusinessException(HttpStatus.NOT_FOUND,
+                                "프로필 정보가 존재하지 않습니다. 다시 회원가입해주세요.")
                 );
 
         // 3. 실제 Supabase 토큰 반환
