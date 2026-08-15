@@ -15,10 +15,10 @@ public class User {
     private Long id;
 
     @Column(nullable = false, unique = true)
-    private String email;
+    private String authUserId;
 
-    @Column(nullable = false)
-    private String password;
+    @Column(nullable = false, unique = true)
+    private String email;
 
     @Column(nullable = false)
     private String name;
@@ -35,16 +35,16 @@ public class User {
     private String organization;
 
     public User(
+            String authUserId,
             String email,
-            String password,
             String name,
             String language,
             String culture,
             String job,
             String organization
     ) {
+        this.authUserId = authUserId;
         this.email = email;
-        this.password = password;
         this.name = name;
         this.language = language;
         this.culture = culture;
@@ -76,12 +76,8 @@ public class User {
         }
 
         if (organization != null) {
-
-            if (organization.isBlank()) {
-                this.organization = null;
-            } else {
-                this.organization = organization;
-            }
+            this.organization =
+                    organization.isBlank() ? null : organization;
         }
     }
 }

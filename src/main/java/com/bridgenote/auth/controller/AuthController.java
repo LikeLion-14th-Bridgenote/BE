@@ -5,8 +5,11 @@ import com.bridgenote.auth.dto.LoginResponse;
 import com.bridgenote.auth.dto.SignupRequest;
 import com.bridgenote.auth.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -57,10 +60,22 @@ public class AuthController {
             summary = "로그아웃",
             description = "현재 로그인된 사용자를 로그아웃 처리합니다."
     )
+    @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/logout")
-    public ResponseEntity<?> logout() {
+    public ResponseEntity<?> logout(
+            @Parameter(hidden = true)
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization
+    ) {
 
-        authService.logout();
+        if (authorization == null || !authorization.startsWith("Bearer")) {
+            throw new IllegalArgumentException(
+                    "Authorization 헤더가 올바르지 않습니다."
+            );
+        }
+
+        String accessToken = authorization.substring(7);
+
+        authService.logout(accessToken);
 
         return ResponseEntity.ok(
                 Map.of(
