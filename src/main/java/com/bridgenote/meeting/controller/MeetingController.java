@@ -1,0 +1,91 @@
+package com.bridgenote.meeting.controller;
+
+import com.bridgenote.common.jwt.AuthUser;
+import com.bridgenote.common.jwt.CurrentUser;
+import com.bridgenote.meeting.dto.MeetingConsentReqDto;
+import com.bridgenote.meeting.dto.MeetingConsentResDto;
+import com.bridgenote.meeting.dto.MeetingCreateReqDto;
+import com.bridgenote.meeting.dto.MeetingCreateResDto;
+import com.bridgenote.meeting.dto.MeetingDetailResDto;
+import com.bridgenote.meeting.dto.MeetingEndResDto;
+import com.bridgenote.meeting.dto.MeetingJoinReqDto;
+import com.bridgenote.meeting.dto.MeetingJoinResDto;
+import com.bridgenote.meeting.dto.MeetingListResDto;
+import com.bridgenote.meeting.service.MeetingService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@Tag(name = "회의", description = "회의 생성/조회/참가/종료 API")
+@RestController
+@RequestMapping("/api/meetings")
+@RequiredArgsConstructor
+public class MeetingController {
+
+	private final MeetingService meetingService;
+
+	@Operation(summary = "회의 생성", description = "로그인 사용자가 새 회의를 만들고 초대 코드를 발급받습니다.")
+	@PostMapping
+	public ResponseEntity<MeetingCreateResDto> create(
+			@CurrentUser AuthUser user,
+			@Valid @RequestBody MeetingCreateReqDto request
+	) {
+		MeetingCreateResDto response = meetingService.create(user, request);
+		return ResponseEntity.status(HttpStatus.CREATED).body(response);
+	}
+
+	@Operation(summary = "내 회의 목록 조회", description = "로그인 사용자가 주최했거나 참가한 회의 목록을 조회합니다.")
+	@GetMapping
+	public ResponseEntity<List<MeetingListResDto>> myMeetings(@CurrentUser AuthUser user) {
+		return ResponseEntity.ok(meetingService.getMyMeetings(user));
+	}
+
+	@Operation(summary = "회의 정보 / 참가자 조회", description = "특정 회의의 정보와 참가자 목록(언어·화자 번호 포함)을 조회합니다.")
+	@GetMapping("/{id}")
+	public ResponseEntity<MeetingDetailResDto> getMeeting(
+			@CurrentUser AuthUser user,
+			@PathVariable String id
+	) {
+		return ResponseEntity.ok(meetingService.getMeeting(id));
+	}
+
+	@Operation(summary = "데이터 처리 동의", description = "회의 입장 전 음성/텍스트 데이터 처리에 동의합니다. 미동의 시 join이 차단됩니다.")
+	@PostMapping("/{id}/consent")
+	public ResponseEntity<MeetingConsentResDto> consent(
+			@CurrentUser AuthUser user,
+			@PathVariable String id,
+			@Valid @RequestBody MeetingConsentReqDto request
+	) {
+		return ResponseEntity.ok(meetingService.consent(user, id, request));
+	}
+
+	@Operation(summary = "회의 참가", description = "초대받은 사용자가 회의에 참가하고 화자 번호를 배정받습니다.")
+	@PostMapping("/{id}/join")
+	public ResponseEntity<MeetingJoinResDto> join(
+			@CurrentUser AuthUser user,
+			@PathVariable String id,
+			@RequestBody MeetingJoinReqDto request
+	) {
+		return ResponseEntity.ok(meetingService.join(user, id, request));
+	}
+
+	@Operation(summary = "회의 종료", description = "주최자가 회의를 종료하고 회의록 생성 파이프라인을 트리거합니다.")
+	@PostMapping("/{id}/end")
+	public ResponseEntity<MeetingEndResDto> end(
+			@CurrentUser AuthUser user,
+			@PathVariable String id
+	) {
+		return ResponseEntity.ok(meetingService.endMeeting(user, id));
+	}
+}
