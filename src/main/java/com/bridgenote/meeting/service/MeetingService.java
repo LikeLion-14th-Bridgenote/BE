@@ -13,6 +13,7 @@ import com.bridgenote.meeting.dto.MeetingEndResDto;
 import com.bridgenote.meeting.dto.MeetingJoinReqDto;
 import com.bridgenote.meeting.dto.MeetingJoinResDto;
 import com.bridgenote.meeting.dto.MeetingListResDto;
+import com.bridgenote.meeting.dto.MinutesResultResDto;
 import com.bridgenote.meeting.repository.MeetingRepository;
 import com.bridgenote.participant.domain.Participant;
 import com.bridgenote.participant.dto.ParticipantResDto;
@@ -48,6 +49,8 @@ public class MeetingService {
 	private final UserRepository userRepository;
 	// 회의 종료 시 참가자 전원에게 meeting_ended 브로드캐스트
 	private final WebSocketSessionRegistry sessionRegistry;
+	// 회의 종료 시 회의록 생성(AI /ai/minutes) 트리거 및 조회
+	private final MinutesGenerator minutesGenerator;
 
 	@Value("${bridgenote.invite-base-url}")
 	private String inviteBaseUrl;
@@ -185,8 +188,20 @@ public class MeetingService {
 		meeting.end(Instant.now());
 		// 연결 중인 참가자 전원에게 종료 알림 (프론트가 즉시 회의록 대기 화면으로 전환)
 		sessionRegistry.broadcast(meetingId, MeetingEndedMessage.of(meetingId, meeting.getEndedAt()));
-		// TODO: 회의록 생성 파이프라인 트리거 (AI 서버 /ai/minutes 배치 호출) — realtime/AI 연동 시 구현
+		// 회의록 생성 비동기 트리거 (AI /ai/minutes). FE는 GET /{id}/minutes로 상태 폴링.
+		minutesGenerator.trigger(meetingId);
 		return MeetingEndResDto.from(meeting);
+	}
+
+	/**
+	 * 생성된 회의록 조회. 회의가 없으면 404. 아직 생성 중이면 status=pending.
+	 */
+	@Transactional(readOnly = true)
+	public MinutesResultResDto getMinutes(String meetingId) {
+		if (!meetingRepository.existsById(meetingId)) {
+			throw new BusinessException(HttpStatus.NOT_FOUND, "해당 회의를 찾을 수 없습니다.");
+		}
+		return minutesGenerator.read(meetingId);
 	}
 
 	/**

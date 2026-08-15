@@ -11,6 +11,7 @@ import com.bridgenote.meeting.dto.MeetingEndResDto;
 import com.bridgenote.meeting.dto.MeetingJoinReqDto;
 import com.bridgenote.meeting.dto.MeetingJoinResDto;
 import com.bridgenote.meeting.dto.MeetingListResDto;
+import com.bridgenote.meeting.dto.MinutesResultResDto;
 import com.bridgenote.meeting.service.MeetingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -87,5 +88,15 @@ public class MeetingController {
 			@PathVariable String id
 	) {
 		return ResponseEntity.ok(meetingService.endMeeting(user, id));
+	}
+
+	@Operation(summary = "회의록 조회",
+			description = "생성된 회의록을 조회합니다. 생성 중이면 status=pending, 완료 시 status=ready + 언어·직무별 섹션.")
+	@GetMapping("/{id}/minutes")
+	public ResponseEntity<MinutesResultResDto> minutes(
+			@CurrentUser AuthUser user,
+			@PathVariable String id
+	) {
+		return ResponseEntity.ok(meetingService.getMinutes(id));
 	}
 }
