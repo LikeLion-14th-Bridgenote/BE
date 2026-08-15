@@ -7,7 +7,6 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,11 +62,16 @@ public class WebSocketSessionRegistry {
 		TextMessage message = new TextMessage(json);
 		for (WebSocketSession session : set) {
 			try {
-				if (session.isOpen()) {
-					session.sendMessage(message);
+				// WebSocketSession.sendMessage는 thread-safe하지 않음. 여러 스레드가 같은 세션에
+				// 동시에 쓰면 TEXT_PARTIAL_WRITING 상태 깨짐(→연결 1011 종료). 세션별로 직렬화한다.
+				synchronized (session) {
+					if (session.isOpen()) {
+						session.sendMessage(message);
+					}
 				}
-			} catch (IOException e) {
-				log.warn("WS 전송 실패 session={}", session.getId(), e);
+			} catch (Exception e) {
+				// 한 세션 전송 실패가 다른 세션/브로드캐스트 전체를 막지 않도록 방어.
+				log.warn("WS 전송 실패 session={}: {}", session.getId(), e.toString());
 			}
 		}
 	}

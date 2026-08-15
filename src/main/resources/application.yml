@@ -22,7 +22,7 @@ supabase:
 # Deepgram STT (실시간 오디오 → 확정 발화). api-key는 env/application-dev.yml 로 주입 — 커밋 금지.
 deepgram:
   api-key: ${DEEPGRAM_API_KEY:}
-  model: ${DEEPGRAM_MODEL:nova-2}
+  model: ${DEEPGRAM_MODEL:nova-3}   # 다국어(language=multi)는 nova-3부터 지원. nova-2는 KR/VN 전사 실패.
   language: ${DEEPGRAM_LANGUAGE:multi}
   # raw PCM이면 지정(예: encoding=linear16, sample-rate=16000). webm/ogg 등 컨테이너면 비워두면 자동감지.
   encoding: ${DEEPGRAM_ENCODING:}
