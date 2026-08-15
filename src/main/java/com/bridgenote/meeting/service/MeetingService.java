@@ -44,7 +44,7 @@ public class MeetingService {
 
 	private final MeetingRepository meetingRepository;
 	private final ParticipantRepository participantRepository;
-	// 임시 email 브릿지용(JWT email ↔ 수민 User). id 정렬 후 profileId 조회로 전환 예정.
+	// 참가자 프로필 스냅샷 조회용(authUserId = JWT sub = Supabase UUID 기준).
 	private final UserRepository userRepository;
 	// 회의 종료 시 참가자 전원에게 meeting_ended 브로드캐스트
 	private final WebSocketSessionRegistry sessionRegistry;
@@ -131,7 +131,7 @@ public class MeetingService {
 
 	/**
 	 * 회의 참가. 초대 코드 검증 + 동의 확인 후 화자 번호 배정. 미동의/미동의행이면 차단.
-	 * profile은 email 브릿지로 조회(임시). 없으면 null 필드.
+	 * profile은 authUserId(JWT sub) 기준 조회. 없으면 null 필드.
 	 */
 	@Transactional
 	public MeetingJoinResDto join(AuthUser user, String meetingId, MeetingJoinReqDto req) {
@@ -150,8 +150,8 @@ public class MeetingService {
 				.orElseThrow(() -> new BusinessException(HttpStatus.BAD_REQUEST,
 						"데이터 처리 동의가 필요합니다. 회의 참가 전 동의해주세요."));
 
-		// profile (임시 email 브릿지) — id 정렬되면 findById(profileId)로 전환
-		User profile = userRepository.findByEmail(user.email()).orElse(null);
+		// profile 조회 — JWT sub(=User.authUserId, Supabase UUID) 브릿지. profileId와 동일 기준으로 통일됨.
+		User profile = userRepository.findByAuthUserId(user.id()).orElse(null);
 		String nickname = (profile != null) ? profile.getName() : null;
 		String language = (profile != null) ? profile.getLanguage() : null;
 		String culture = (profile != null) ? profile.getCulture() : null;
