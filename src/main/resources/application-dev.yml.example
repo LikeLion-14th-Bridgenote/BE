@@ -18,3 +18,19 @@ spring:
   sql:
     init:
       mode: never
+
+# Supabase Auth (로그인/회원가입 = SupabaseAuthClient). 값은 Supabase 대시보드 → Project Settings → API.
+# ⚠️ 이 섹션이 비면 로그인이 localhost:80으로 붙어 500이 난다. 반드시 채울 것.
+supabase:
+  url: ${SUPABASE_URL:https://<PROJECT>.supabase.co}      # Project URL
+  publishable-key: ${SUPABASE_PUBLISHABLE_KEY:}           # anon / publishable key (sb_publishable_...)
+  secret-key: ${SUPABASE_SECRET_KEY:}                     # service_role / secret key (sb_secret_...)
+
+# AI 서버(bridgenote-AI) 주소. 배포 시 같은 서버 내부 호출이면 localhost 유지.
+bridgenote:
+  ai:
+    server-url: ${AI_SERVER_URL:http://localhost:8000}
+
+# Deepgram STT (실시간). 값은 Deepgram 대시보드.
+deepgram:
+  api-key: ${DEEPGRAM_API_KEY:}
