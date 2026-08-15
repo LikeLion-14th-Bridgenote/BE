@@ -30,9 +30,11 @@ public class AiAnalyzeClient {
 	// Spring Boot 4 = Jackson 3(tools.jackson). WS 브로드캐스트와 동일한 전역 snake_case 매퍼.
 	private final ObjectMapper objectMapper;
 
-	public AiAnalyzeClient(WebClient.Builder builder, ObjectMapper objectMapper,
+	public AiAnalyzeClient(ObjectMapper objectMapper,
 						   @Value("${bridgenote.ai.server-url}") String serverUrl) {
-		this.webClient = builder.baseUrl(serverUrl).build();
+		// WebClient.builder() 정적 팩토리 사용(주입식 WebClient.Builder 빈은 이 webmvc 앱에 없음).
+		// 직렬화/역직렬화는 objectMapper로 직접 하므로 WebClient 코덱 설정은 불필요.
+		this.webClient = WebClient.builder().baseUrl(serverUrl).build();
 		this.objectMapper = objectMapper;
 	}
 

@@ -10,13 +10,17 @@ import com.bridgenote.meeting.dto.MeetingDetailResDto;
 import com.bridgenote.meeting.dto.MeetingEndResDto;
 import com.bridgenote.meeting.dto.MeetingJoinReqDto;
 import com.bridgenote.meeting.dto.MeetingJoinResDto;
+import com.bridgenote.meeting.dto.CulturalNoteResDto;
 import com.bridgenote.meeting.dto.MeetingListResDto;
 import com.bridgenote.meeting.dto.MinutesResultResDto;
+import com.bridgenote.meeting.dto.TranscriptResDto;
+import com.bridgenote.meeting.service.MeetingArchiveService;
 import com.bridgenote.meeting.service.MeetingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,6 +28,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -35,6 +40,7 @@ import java.util.List;
 public class MeetingController {
 
 	private final MeetingService meetingService;
+	private final MeetingArchiveService meetingArchiveService;
 
 	@Operation(summary = "회의 생성", description = "로그인 사용자가 새 회의를 만들고 초대 코드를 발급받습니다.")
 	@PostMapping
@@ -98,5 +104,27 @@ public class MeetingController {
 			@PathVariable String id
 	) {
 		return ResponseEntity.ok(meetingService.getMinutes(id));
+	}
+
+	@Operation(summary = "전체 전사 기록 조회",
+			description = "회의의 확정 발화를 시간순으로 조회합니다(원문+언어별 번역, 페이지네이션).")
+	@GetMapping("/{id}/utterances")
+	public ResponseEntity<TranscriptResDto> utterances(
+			@CurrentUser AuthUser user,
+			@PathVariable String id,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size
+	) {
+		return ResponseEntity.ok(meetingArchiveService.getTranscript(id, PageRequest.of(page, size)));
+	}
+
+	@Operation(summary = "문화 가이드(각주) 조회",
+			description = "회의의 문화 각주 목록과 note_type별 집계를 조회합니다.")
+	@GetMapping("/{id}/cultural-notes")
+	public ResponseEntity<CulturalNoteResDto> culturalNotes(
+			@CurrentUser AuthUser user,
+			@PathVariable String id
+	) {
+		return ResponseEntity.ok(meetingArchiveService.getCulturalNotes(id));
 	}
 }
