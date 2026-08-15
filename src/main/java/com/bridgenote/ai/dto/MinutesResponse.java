@@ -20,7 +20,7 @@ public record MinutesResponse(
 	) {
 	}
 
-	/** 액션 아이템. */
-	public record ActionItem(String task) {
+	/** 액션 아이템. owner(담당자)·deadline(기한)은 FE 액션 탭 컬럼용(없을 수 있음). */
+	public record ActionItem(String task, String owner, String deadline) {
 	}
 }
