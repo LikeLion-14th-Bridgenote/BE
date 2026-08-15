@@ -24,7 +24,8 @@ import java.util.function.Consumer;
 @Component
 public class AiAnalyzeClient {
 
-	private static final Duration TIMEOUT = Duration.ofSeconds(8);
+	// 게이트(RAG) + 각주 LLM + 번역까지 한 번에 처리하므로 넉넉히. 너무 짧으면 번역/경고가 유실됨.
+	private static final Duration TIMEOUT = Duration.ofSeconds(20);
 
 	private final WebClient webClient;
 	// Spring Boot 4 = Jackson 3(tools.jackson). WS 브로드캐스트와 동일한 전역 snake_case 매퍼.
