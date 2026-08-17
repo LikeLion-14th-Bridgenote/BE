@@ -60,19 +60,29 @@ public class SttService {
 	}
 
 	/**
-	 * 화자 번호 → 언어(participant.language). 회의당 1회 로딩 후 캐시.
-	 * 미스(캐시 로딩 후 합류한 화자 등)면 null → DeepgramConnectionManager가 기본 언어로 fallback.
+	 * 화자 번호 → 언어(participant.language). 캐시에서 찾되, 미스면 재조회해 갱신한다.
+	 * (호스트가 먼저 말해 캐시가 굳으면, 이후 합류한 화자가 전부 기본 언어로 떨어지던 문제 방지.)
+	 * 재조회는 새 화자가 나타난 첫 청크에서만 일어나므로 청크마다 DB를 치지 않는다.
 	 */
 	private String speakerLang(String meetingId, Integer speakerIndex) {
 		if (speakerIndex == null) {
 			return null;
 		}
-		Map<Integer, String> byIndex = speakerLangCache.computeIfAbsent(meetingId, id ->
-				participantRepository.findByMeetingIdAndSpeakerIndexIsNotNullOrderBySpeakerIndexAsc(id).stream()
-						.filter(p -> p.getSpeakerIndex() != null && p.getLanguage() != null)
-						.collect(Collectors.toConcurrentMap(
-								Participant::getSpeakerIndex, Participant::getLanguage, (a, b) -> a)));
-		return byIndex.get(speakerIndex);
+		Map<Integer, String> byIndex = speakerLangCache.computeIfAbsent(meetingId, this::loadSpeakerLangs);
+		String lang = byIndex.get(speakerIndex);
+		if (lang == null) {
+			byIndex = loadSpeakerLangs(meetingId);   // 캐시 이후 합류 등 → 재조회 후 교체
+			speakerLangCache.put(meetingId, byIndex);
+			lang = byIndex.get(speakerIndex);
+		}
+		return lang;
+	}
+
+	private Map<Integer, String> loadSpeakerLangs(String meetingId) {
+		return participantRepository.findByMeetingIdAndSpeakerIndexIsNotNullOrderBySpeakerIndexAsc(meetingId).stream()
+				.filter(p -> p.getSpeakerIndex() != null && p.getLanguage() != null)
+				.collect(Collectors.toConcurrentMap(
+						Participant::getSpeakerIndex, Participant::getLanguage, (a, b) -> a));
 	}
 
 	/**
