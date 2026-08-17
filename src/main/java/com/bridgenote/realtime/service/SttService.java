@@ -1,5 +1,7 @@
 package com.bridgenote.realtime.service;
 
+import com.bridgenote.participant.domain.Participant;
+import com.bridgenote.participant.repository.ParticipantRepository;
 import com.bridgenote.realtime.domain.Utterance;
 import com.bridgenote.realtime.dto.CaptionMessage;
 import com.bridgenote.realtime.repository.UtteranceRepository;
@@ -11,6 +13,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 오디오 청크 → Deepgram STT 오케스트레이션.
@@ -29,6 +34,9 @@ public class SttService {
 	private final MeetingSpeakerState speakerState;
 	private final UtteranceRepository utteranceRepository;
 	private final UtteranceAnalyzer utteranceAnalyzer;
+	private final ParticipantRepository participantRepository;
+	// 회의별 화자번호 → 언어 캐시(오디오 청크마다 DB 조회 방지). 회의당 1회 로딩.
+	private final Map<String, Map<Integer, String>> speakerLangCache = new ConcurrentHashMap<>();
 
 	/** WS 핸들러가 audio_chunk 수신 시 호출. */
 	public void submitAudio(String meetingId, Integer speakerIndex, Long seq, String base64Data) {
@@ -44,9 +52,27 @@ public class SttService {
 			return;
 		}
 
-		deepgram.sendAudio(meetingId, audio,
+		// 현재 화자의 언어로 Deepgram 연결 선택(KR 화자는 ko, VN 화자는 vi로 전사 — multi 뭉갬 회피)
+		String lang = speakerLang(meetingId, speakerState.get(meetingId));
+		deepgram.sendAudio(meetingId, lang, audio,
 				(sentenceId, sourceLang, text, isFinal) ->
 						onTranscript(meetingId, sentenceId, sourceLang, text, isFinal));
+	}
+
+	/**
+	 * 화자 번호 → 언어(participant.language). 회의당 1회 로딩 후 캐시.
+	 * 미스(캐시 로딩 후 합류한 화자 등)면 null → DeepgramConnectionManager가 기본 언어로 fallback.
+	 */
+	private String speakerLang(String meetingId, Integer speakerIndex) {
+		if (speakerIndex == null) {
+			return null;
+		}
+		Map<Integer, String> byIndex = speakerLangCache.computeIfAbsent(meetingId, id ->
+				participantRepository.findByMeetingIdAndSpeakerIndexIsNotNullOrderBySpeakerIndexAsc(id).stream()
+						.filter(p -> p.getSpeakerIndex() != null && p.getLanguage() != null)
+						.collect(Collectors.toConcurrentMap(
+								Participant::getSpeakerIndex, Participant::getLanguage, (a, b) -> a)));
+		return byIndex.get(speakerIndex);
 	}
 
 	/**
@@ -79,5 +105,6 @@ public class SttService {
 	public void closeMeeting(String meetingId) {
 		deepgram.close(meetingId);
 		speakerState.clear(meetingId);
+		speakerLangCache.remove(meetingId);
 	}
 }
