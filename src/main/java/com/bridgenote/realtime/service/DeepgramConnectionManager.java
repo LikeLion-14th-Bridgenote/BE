@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 public class DeepgramConnectionManager {
 
 	private static final String DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen";
+	private static final long RECONNECT_COOLDOWN_MS = 3000;   // 연결 실패 후 재시도 최소 간격
 
 	@Value("${deepgram.api-key:}")
 	private String apiKey;
@@ -46,9 +47,11 @@ public class DeepgramConnectionManager {
 	public void sendAudio(String meetingId, String lang, byte[] audio, TranscriptListener listener) {
 		String effLang = (lang != null && !lang.isBlank()) ? lang : language;
 		String key = meetingId + "|" + effLang;
-		// 없거나 유휴/오류로 닫힌 연결이면 새로 연다(닫힌 연결을 계속 쓰면 전송이 전부 죽어 자막이 끊긴다).
+		// 없거나 닫힌 연결이면 새로 연다(닫힌 연결을 계속 쓰면 전송이 전부 죽어 자막이 끊긴다).
+		// 단 연결 자체가 실패한 경우엔 reconnectDue의 cooldown으로 재시도 폭주(락 안 5초 핸드셰이크)를 막는다.
 		DeepgramLiveConnection conn = connections.compute(key, (k, existing) ->
-				(existing == null || existing.isClosed()) ? openConnection(meetingId, effLang, listener) : existing);
+				(existing == null || existing.reconnectDue(RECONNECT_COOLDOWN_MS))
+						? openConnection(meetingId, effLang, listener) : existing);
 		conn.sendAudio(audio);
 	}
 
@@ -80,6 +83,7 @@ public class DeepgramConnectionManager {
 			log.info("Deepgram 연결됨 meeting={} model={} language={}", meetingId, model, lang);
 		} catch (Exception e) {
 			log.error("Deepgram 연결 실패 meeting={} lang={}: {}", meetingId, lang, e.getMessage());
+			conn.markOpenFailed();   // 실패 표시 → 다음 청크에서 즉시 재시도 안 하고 cooldown 대기
 		}
 		return conn;
 	}
