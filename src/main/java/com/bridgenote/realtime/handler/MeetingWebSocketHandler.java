@@ -33,9 +33,12 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class MeetingWebSocketHandler extends TextWebSocketHandler {
+	static final String ATTR_JOINED_PARTICIPANT = "joinedParticipant";
 
 	/** 인증 실패(토큰 없음/만료) */
 	private static final CloseStatus UNAUTHORIZED = new CloseStatus(4401, "인증 실패");
+	/** consent → join을 완료하지 않음 */
+	private static final CloseStatus JOIN_REQUIRED = new CloseStatus(4403, "회의 참가 필요");
 	/** 회의 없음 */
 	private static final CloseStatus MEETING_NOT_FOUND = new CloseStatus(4404, "회의 없음");
 	/** 이미 종료된 회의 */
@@ -62,18 +65,28 @@ public class MeetingWebSocketHandler extends TextWebSocketHandler {
 			return;
 		}
 
-		// 회의 상태 판정 + 첫 접속이면 WAITING→LIVE 전환
-		MeetingService.ConnectResult result = meetingService.onParticipantConnect(meetingId);
+		// join 완료 여부 + 회의 상태 판정. 검증을 통과한 첫 접속만 WAITING→LIVE로 전환한다.
+		MeetingService.ConnectResult result = meetingService.onParticipantConnect(meetingId, user.id());
 		switch (result) {
 			case NOT_FOUND -> { session.close(MEETING_NOT_FOUND); return; }
 			case ENDED -> { session.close(MEETING_ENDED); return; }
+			case NOT_JOINED -> { session.close(JOIN_REQUIRED); return; }
 			default -> { /* LIVE / STARTED → 진행 */ }
 		}
 
-		// 기존 참가자들에게 입장 알림 (본인은 아직 세션 미등록이라 자기 이벤트는 안 받음)
-		participantRepository.findByMeetingIdAndProfileId(meetingId, user.id())
-				.ifPresent(p -> sessionRegistry.broadcast(meetingId, ParticipantJoinedMessage.of(p)));
+		// 서비스 검증 직후 참가자가 사라지는 예외 상황에서도 미등록 세션을 방에 넣지 않는다.
+		var participant = participantRepository.findByMeetingIdAndProfileId(meetingId, user.id())
+				.filter(p -> p.isJoined())
+				.orElse(null);
+		if (participant == null) {
+			session.close(JOIN_REQUIRED);
+			return;
+		}
+
+		// 먼저 등록해야 새 참가자 본인까지 participant_joined를 수신한다.
 		sessionRegistry.add(meetingId, session);
+		session.getAttributes().put(ATTR_JOINED_PARTICIPANT, true);
+		sessionRegistry.broadcast(meetingId, ParticipantJoinedMessage.of(participant));
 
 		// 첫 참가자 접속으로 회의가 시작됐으면 본인 포함 전원에게 상태 전환 알림
 		if (result == MeetingService.ConnectResult.STARTED) {
@@ -110,7 +123,8 @@ public class MeetingWebSocketHandler extends TextWebSocketHandler {
 	public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
 		AuthUser user = (AuthUser) session.getAttributes().get(AuthHandshakeInterceptor.ATTR_AUTH_USER);
 		String meetingId = (String) session.getAttributes().get(AuthHandshakeInterceptor.ATTR_MEETING_ID);
-		if (meetingId != null) {
+		boolean joinedParticipant = Boolean.TRUE.equals(session.getAttributes().get(ATTR_JOINED_PARTICIPANT));
+		if (meetingId != null && joinedParticipant) {
 			sessionRegistry.remove(meetingId, session);
 			// 남은 참가자들에게 퇴장 알림 (본인 세션은 이미 제거됨)
 			if (user != null) {
