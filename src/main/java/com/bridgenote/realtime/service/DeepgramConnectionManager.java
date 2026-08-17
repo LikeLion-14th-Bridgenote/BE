@@ -46,7 +46,10 @@ public class DeepgramConnectionManager {
 	public void sendAudio(String meetingId, String lang, byte[] audio, TranscriptListener listener) {
 		String effLang = (lang != null && !lang.isBlank()) ? lang : language;
 		String key = meetingId + "|" + effLang;
-		connections.computeIfAbsent(key, k -> openConnection(meetingId, effLang, listener)).sendAudio(audio);
+		// 없거나 유휴/오류로 닫힌 연결이면 새로 연다(닫힌 연결을 계속 쓰면 전송이 전부 죽어 자막이 끊긴다).
+		DeepgramLiveConnection conn = connections.compute(key, (k, existing) ->
+				(existing == null || existing.isClosed()) ? openConnection(meetingId, effLang, listener) : existing);
+		conn.sendAudio(audio);
 	}
 
 	/** 회의 종료/마지막 참가자 퇴장 시 그 회의의 모든 언어 연결을 닫는다. */
