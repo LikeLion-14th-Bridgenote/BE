@@ -29,7 +29,8 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	private volatile WebSocket ws;
 	private volatile boolean closed = false;   // 유휴/오류로 닫힌 연결 표시 → 매니저가 재연결
 	private volatile boolean openFailed = false;   // 최초 연결 자체가 실패한 경우(핸드셰이크 실패)
-	private final long attemptAt = System.currentTimeMillis();   // 이 연결 시도 시각(백오프 기준)
+	private volatile long failedAt = 0L;           // 실패 확정 시각(백오프 기준). 시도 시작이 아니라 실패 시점이어야
+	                                               // 타임아웃(5s>쿨다운) 실패도 쿨다운에 물린다.
 	private final Object sendLock = new Object();
 	private CompletableFuture<WebSocket> sendChain = CompletableFuture.completedFuture(null);
 
@@ -80,6 +81,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	/** 최초 연결(핸드셰이크) 자체가 실패했음을 표시. 매니저가 open 실패 시 호출. */
 	public void markOpenFailed() {
 		this.openFailed = true;
+		this.failedAt = System.currentTimeMillis();
 	}
 
 	/**
@@ -92,7 +94,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 		if (!isClosed()) {
 			return false;
 		}
-		if (openFailed && System.currentTimeMillis() - attemptAt < cooldownMs) {
+		if (openFailed && System.currentTimeMillis() - failedAt < cooldownMs) {
 			return false;
 		}
 		return true;

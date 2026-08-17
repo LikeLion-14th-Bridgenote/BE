@@ -72,6 +72,7 @@ public class DeepgramConnectionManager {
 		DeepgramLiveConnection conn = new DeepgramLiveConnection(listener, objectMapper, lang);
 		if (apiKey.isBlank()) {
 			log.warn("DEEPGRAM_API_KEY 미설정 — STT 비활성 (meeting={})", meetingId);
+			conn.markOpenFailed();   // 재시도해도 계속 실패 → 매 청크 새 객체 생성 억제
 			return conn; // ws 없음 → sendAudio no-op
 		}
 		try {
