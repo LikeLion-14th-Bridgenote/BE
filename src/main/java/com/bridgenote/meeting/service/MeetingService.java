@@ -205,11 +205,12 @@ public class MeetingService {
 	}
 
 	/**
-	 * 참가자 WS 접속 시 회의 상태 처리(핸들러가 호출).
-	 * 없으면 NOT_FOUND, ENDED면 접속 거부용 ENDED, WAITING이면 첫 접속에서 LIVE로 전환하고 STARTED, 이미 진행 중이면 LIVE.
+	 * 참가자 WS 접속 시 참가 완료 여부와 회의 상태를 처리한다(핸들러가 호출).
+	 * 회의가 없으면 NOT_FOUND, join 전이면 NOT_JOINED, 종료됐으면 ENDED를 반환한다.
+	 * 검증을 통과한 첫 접속만 WAITING에서 LIVE로 전환한다.
 	 */
 	@Transactional
-	public ConnectResult onParticipantConnect(String meetingId) {
+	public ConnectResult onParticipantConnect(String meetingId, String profileId) {
 		Meeting meeting = meetingRepository.findById(meetingId).orElse(null);
 		if (meeting == null) {
 			return ConnectResult.NOT_FOUND;
@@ -217,11 +218,17 @@ public class MeetingService {
 		if (meeting.getStatus() == MeetingStatus.ENDED) {
 			return ConnectResult.ENDED;
 		}
+		boolean joined = participantRepository.findByMeetingIdAndProfileId(meetingId, profileId)
+				.map(Participant::isJoined)
+				.orElse(false);
+		if (!joined) {
+			return ConnectResult.NOT_JOINED;
+		}
 		return meeting.start(Instant.now()) ? ConnectResult.STARTED : ConnectResult.LIVE;
 	}
 
 	/** WS 접속 시 회의 상태 판정 결과. */
-	public enum ConnectResult { STARTED, LIVE, ENDED, NOT_FOUND }
+	public enum ConnectResult { STARTED, LIVE, ENDED, NOT_FOUND, NOT_JOINED }
 
 	private String generateUniqueInviteCode() {
 		for (int i = 0; i < MAX_RETRY; i++) {

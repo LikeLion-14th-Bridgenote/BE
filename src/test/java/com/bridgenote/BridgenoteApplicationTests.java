@@ -12,7 +12,10 @@ import org.springframework.boot.test.context.SpringBootTest;
  * 실제 엔티티/리포지토리를 추가해 DB 연동 테스트가 필요해지면
  * 아래 properties를 걷어내고 테스트용 DB(또는 Testcontainers)로 전환할 것.
  */
-@SpringBootTest(properties = {
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+		"spring.datasource.url=jdbc:postgresql://localhost:5432/bridgenote_test",
+		"spring.datasource.username=test",
+		"spring.datasource.password=test",
 		"spring.jpa.hibernate.ddl-auto=none",
 		"spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect",
 		"spring.jpa.properties.hibernate.temp.use_jdbc_metadata_defaults=false"
