@@ -28,6 +28,8 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 
 	private volatile WebSocket ws;
 	private volatile boolean closed = false;   // 유휴/오류로 닫힌 연결 표시 → 매니저가 재연결
+	private volatile boolean openFailed = false;   // 최초 연결 자체가 실패한 경우(핸드셰이크 실패)
+	private final long attemptAt = System.currentTimeMillis();   // 이 연결 시도 시각(백오프 기준)
 	private final Object sendLock = new Object();
 	private CompletableFuture<WebSocket> sendChain = CompletableFuture.completedFuture(null);
 
@@ -70,9 +72,30 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 		return null;
 	}
 
-	/** 유휴/오류로 닫힌 연결인지. 매니저가 이걸 보고 새 연결로 교체한다. */
+	/** 유휴/오류로 닫힌 연결인지. */
 	public boolean isClosed() {
 		return closed || ws == null;
+	}
+
+	/** 최초 연결(핸드셰이크) 자체가 실패했음을 표시. 매니저가 open 실패 시 호출. */
+	public void markOpenFailed() {
+		this.openFailed = true;
+	}
+
+	/**
+	 * 지금 재연결해야 하는지. 닫힌 연결만 대상이되,
+	 * <b>연결 자체가 실패했던 경우엔 cooldown 동안 재시도하지 않는다</b>.
+	 * (Deepgram 장애 시 250ms마다 5초 블로킹 핸드셰이크가 락 안에서 쌓이는 폭주 방지.
+	 *  유휴 타임아웃으로 닫힌 정상 연결은 openFailed=false라 즉시 재연결된다.)
+	 */
+	public boolean reconnectDue(long cooldownMs) {
+		if (!isClosed()) {
+			return false;
+		}
+		if (openFailed && System.currentTimeMillis() - attemptAt < cooldownMs) {
+			return false;
+		}
+		return true;
 	}
 
 	private void markClosed() {

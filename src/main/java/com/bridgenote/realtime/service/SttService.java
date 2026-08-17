@@ -35,8 +35,11 @@ public class SttService {
 	private final UtteranceRepository utteranceRepository;
 	private final UtteranceAnalyzer utteranceAnalyzer;
 	private final ParticipantRepository participantRepository;
-	// 회의별 화자번호 → 언어 캐시(오디오 청크마다 DB 조회 방지). 회의당 1회 로딩.
+	// 회의별 화자번호 → 언어 캐시(오디오 청크마다 DB 조회 방지).
 	private final Map<String, Map<Integer, String>> speakerLangCache = new ConcurrentHashMap<>();
+	// 미스 재조회 쿨다운(회의별 마지막 재조회 시각). 영구 미스(언어 null·미참가 화자)가 청크마다 DB를 치는 것 방지.
+	private final Map<String, Long> speakerLangReloadAt = new ConcurrentHashMap<>();
+	private static final long SPEAKER_LANG_RELOAD_COOLDOWN_MS = 5000;
 
 	/** WS 핸들러가 audio_chunk 수신 시 호출. */
 	public void submitAudio(String meetingId, Integer speakerIndex, Long seq, String base64Data) {
@@ -70,12 +73,19 @@ public class SttService {
 		}
 		Map<Integer, String> byIndex = speakerLangCache.computeIfAbsent(meetingId, this::loadSpeakerLangs);
 		String lang = byIndex.get(speakerIndex);
-		if (lang == null) {
-			byIndex = loadSpeakerLangs(meetingId);   // 캐시 이후 합류 등 → 재조회 후 교체
+		if (lang == null && reloadDue(meetingId)) {
+			// 캐시 이후 합류 등 → 재조회 후 교체. 쿨다운으로 영구 미스가 청크마다 DB 치는 것 방지.
+			byIndex = loadSpeakerLangs(meetingId);
 			speakerLangCache.put(meetingId, byIndex);
+			speakerLangReloadAt.put(meetingId, System.currentTimeMillis());
 			lang = byIndex.get(speakerIndex);
 		}
 		return lang;
+	}
+
+	private boolean reloadDue(String meetingId) {
+		Long last = speakerLangReloadAt.get(meetingId);
+		return last == null || System.currentTimeMillis() - last >= SPEAKER_LANG_RELOAD_COOLDOWN_MS;
 	}
 
 	private Map<Integer, String> loadSpeakerLangs(String meetingId) {
@@ -116,5 +126,6 @@ public class SttService {
 		deepgram.close(meetingId);
 		speakerState.clear(meetingId);
 		speakerLangCache.remove(meetingId);
+		speakerLangReloadAt.remove(meetingId);
 	}
 }
