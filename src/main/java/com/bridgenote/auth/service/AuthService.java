@@ -5,11 +5,13 @@ import com.bridgenote.common.exception.BusinessException;
 import com.bridgenote.user.domain.User;
 import com.bridgenote.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.bridgenote.auth.dto.SupabaseLoginResponse;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -46,20 +48,35 @@ public class AuthService {
                 authResponse.getUser().getId();
 
         // 3. BridgeNote users 테이블에 프로필 저장
-        User user = new User(
-                authUserId,
-                request.getEmail(),
-                request.getName(),
-                request.getLanguage(),
-                request.getCulture(),
-                request.getJob(),
-                request.getOrganization()
-        );
+        //    이 단계가 실패하면 이미 만들어진 Auth 계정이 '고아'로 남으므로(트랜잭션 밖),
+        //    실패 시 Auth 계정을 되돌려(deleteUser) 정합성을 맞춘다.
+        try {
+            User user = new User(
+                    authUserId,
+                    request.getEmail(),
+                    request.getName(),
+                    request.getLanguage(),
+                    request.getCulture(),
+                    request.getJob(),
+                    request.getOrganization()
+            );
 
-        User savedUser =
-                userRepository.save(user);
+            User savedUser =
+                    userRepository.save(user);
 
-        return savedUser.getId();
+            return savedUser.getId();
+
+        } catch (RuntimeException e) {
+            try {
+                supabaseAuthClient.deleteUser(authUserId);
+            } catch (RuntimeException cleanupError) {
+                // 보상 삭제까지 실패하면 고아가 남을 수 있으니 로그로 남긴다(수동 정리 대상).
+                log.error("프로필 저장 실패 후 Auth 계정 보상 삭제 실패. 고아 계정 수동 정리 필요: authUserId={}",
+                        authUserId, cleanupError);
+            }
+            throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "회원 프로필 저장에 실패했습니다. 잠시 후 다시 시도해주세요.");
+        }
     }
 
     public LoginResponse login(LoginRequest request) {
