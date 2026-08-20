@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 public class DeepgramLiveConnection implements WebSocket.Listener {
 
 	private static final String KEEP_ALIVE_MSG = "{\"type\":\"KeepAlive\"}";
-	private static final long KEEP_ALIVE_INTERVAL_SEC = 8;  // Deepgram inactivity timeout(~30s) 전에 충분히 자주
+	private static final long KEEP_ALIVE_INTERVAL_SEC = 3;  // Deepgram inactivity timeout 전에 충분히 자주
 	private static final ScheduledExecutorService keepAliveScheduler =
 			Executors.newSingleThreadScheduledExecutor(r -> {
 				Thread t = new Thread(r, "deepgram-keepalive");
@@ -166,7 +166,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 			} catch (Exception e) {
 				log.debug("KeepAlive 전송 실패: {}", e.getMessage());
 			}
-		}, KEEP_ALIVE_INTERVAL_SEC, KEEP_ALIVE_INTERVAL_SEC, TimeUnit.SECONDS);
+		}, 0, KEEP_ALIVE_INTERVAL_SEC, TimeUnit.SECONDS);
 	}
 
 	private void stopKeepAlive() {
