@@ -34,7 +34,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	private final TranscriptListener transcriptListener;
 	private final ObjectMapper objectMapper;
 	private final String language;
-	private final Integer speakerIndex;
+	private volatile Integer speakerIndex;  // 현재 이 연결로 오디오를 보내는 화자 (전환 시 갱신됨)
 
 	// sentence_id는 전역 유일해야 한다. 예전 "s-{counter}"는 연결마다 0부터 시작해서
 	// 회의 간(그리고 언어별 연결 간) s-0이 겹쳤고, 저장 중복검사에 걸려 각주·번역이 조용히 유실됐다.
@@ -126,6 +126,11 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 
 	// ===== 전송/종료 =====
 
+	/** 현재 이 연결을 사용하는 화자를 갱신한다. (같은 언어 화자가 전환될 때 호출) */
+	public void updateSpeakerIndex(Integer speakerIndex) {
+		this.speakerIndex = speakerIndex;
+	}
+
 	/** 오디오 바이트 전송(직렬화 — 이전 전송 완료 후 다음 전송). */
 	public void sendAudio(byte[] audio) {
 		WebSocket w = this.ws;
@@ -162,7 +167,10 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 				return;
 			}
 			try {
-				w.sendText(KEEP_ALIVE_MSG, true);
+				// sendChain에 직렬화해서 오디오 전송과 경합하지 않도록
+				synchronized (sendLock) {
+					sendChain = sendChain.thenCompose(x -> w.sendText(KEEP_ALIVE_MSG, true));
+				}
 			} catch (Exception e) {
 				log.debug("KeepAlive 전송 실패: {}", e.getMessage());
 			}
