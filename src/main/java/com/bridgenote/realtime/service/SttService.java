@@ -43,6 +43,7 @@ public class SttService {
 
 	/** WS 핸들러가 audio_chunk 수신 시 호출. */
 	public void submitAudio(String meetingId, Integer speakerIndex, Long seq, String base64Data) {
+		// 전역 상태는 다른 용도(speaker_switch 기반 폴백 등)로 유지하되, 라우팅엔 사용하지 않는다.
 		if (speakerIndex != null) {
 			speakerState.set(meetingId, speakerIndex);
 		}
@@ -55,11 +56,12 @@ public class SttService {
 			return;
 		}
 
-		// 현재 화자의 언어로 Deepgram 연결 선택(KR 화자는 ko, VN 화자는 vi로 전사 — multi 뭉갬 회피)
-		String lang = speakerLang(meetingId, speakerState.get(meetingId));
-		deepgram.sendAudio(meetingId, lang, audio,
-				(sentenceId, sourceLang, text, isFinal) ->
-						onTranscript(meetingId, sentenceId, sourceLang, text, isFinal));
+		// 파라미터로 전달된 speakerIndex를 직접 사용(전역 상태 경유 금지 — 동시 다화자 교차 오염 방지)
+		Integer spk = (speakerIndex != null) ? speakerIndex : speakerState.get(meetingId);
+		String lang = speakerLang(meetingId, spk);
+		deepgram.sendAudio(meetingId, spk, lang, audio,
+				(sentenceId, sourceLang, text, isFinal, cbSpeakerIndex) ->
+						onTranscript(meetingId, sentenceId, sourceLang, text, isFinal, cbSpeakerIndex));
 	}
 
 	/**
@@ -97,11 +99,9 @@ public class SttService {
 
 	/**
 	 * Deepgram 전사 결과 처리: 자막 즉시 브로드캐스트, 확정(is_final)이면 utterance 저장.
-	 * (화자는 수신 시점의 현재 화자 상태로 태깅)
+	 * (화자는 콜백으로 전달된 speakerIndex를 사용 — 전역 상태 의존 제거)
 	 */
-	public void onTranscript(String meetingId, String sentenceId, String sourceLang, String text, boolean isFinal) {
-		Integer speakerIndex = speakerState.get(meetingId);
-
+	public void onTranscript(String meetingId, String sentenceId, String sourceLang, String text, boolean isFinal, Integer speakerIndex) {
 		// 자막은 즉시 브로드캐스트(interim 포함)
 		sessionRegistry.broadcast(meetingId,
 				CaptionMessage.of(sentenceId, speakerIndex, sourceLang, text, isFinal));

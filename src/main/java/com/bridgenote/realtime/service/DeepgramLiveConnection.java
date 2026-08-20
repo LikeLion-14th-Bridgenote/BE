@@ -20,6 +20,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	private final TranscriptListener transcriptListener;
 	private final ObjectMapper objectMapper;
 	private final String language;
+	private final Integer speakerIndex;
 
 	// sentence_id는 전역 유일해야 한다. 예전 "s-{counter}"는 연결마다 0부터 시작해서
 	// 회의 간(그리고 언어별 연결 간) s-0이 겹쳤고, 저장 중복검사에 걸려 각주·번역이 조용히 유실됐다.
@@ -34,10 +35,11 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	private final Object sendLock = new Object();
 	private CompletableFuture<WebSocket> sendChain = CompletableFuture.completedFuture(null);
 
-	public DeepgramLiveConnection(TranscriptListener transcriptListener, ObjectMapper objectMapper, String language) {
+	public DeepgramLiveConnection(TranscriptListener transcriptListener, ObjectMapper objectMapper, String language, Integer speakerIndex) {
 		this.transcriptListener = transcriptListener;
 		this.objectMapper = objectMapper;
 		this.language = language;
+		this.speakerIndex = speakerIndex;
 	}
 
 	// ===== WebSocket.Listener =====
@@ -148,7 +150,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 			}
 			boolean isFinal = Boolean.TRUE.equals(result.isFinal());
 			String sentenceId = currentSentenceId;
-			transcriptListener.onTranscript(sentenceId, language, text, isFinal);
+			transcriptListener.onTranscript(sentenceId, language, text, isFinal, speakerIndex);
 			if (isFinal) {
 				currentSentenceId = UUID.randomUUID().toString(); // 다음 발화용 새(유일) sentence_id
 			}

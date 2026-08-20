@@ -41,17 +41,19 @@ public class DeepgramConnectionManager {
 	private final Map<String, DeepgramLiveConnection> connections = new ConcurrentHashMap<>();
 
 	/**
-	 * 오디오 바이트를 (회의, 화자 언어)별 Deepgram 연결로 전송. lang이 비면 기본 언어(multi 등) 사용.
-	 * 화자별로 연결/언어를 분리해 KR 화자는 ko, VN 화자는 vi로 전사한다(multi의 한국어 뭉갬 해결).
+	 * 오디오 바이트를 (회의, 화자)별 Deepgram 연결로 전송. 화자마다 독립 연결을 유지해
+	 * 서로 다른 webm 스트림이 한 연결에 섞이는 것을 방지한다.
+	 * lang은 해당 화자의 언어(Deepgram URL 파라미터로 사용).
 	 */
-	public void sendAudio(String meetingId, String lang, byte[] audio, TranscriptListener listener) {
+	public void sendAudio(String meetingId, Integer speakerIndex, String lang, byte[] audio, TranscriptListener listener) {
 		String effLang = (lang != null && !lang.isBlank()) ? lang : language;
-		String key = meetingId + "|" + effLang;
+		String spkKey = (speakerIndex != null) ? String.valueOf(speakerIndex) : "unknown";
+		String key = meetingId + "|" + spkKey;
 		// 없거나 닫힌 연결이면 새로 연다(닫힌 연결을 계속 쓰면 전송이 전부 죽어 자막이 끊긴다).
 		// 단 연결 자체가 실패한 경우엔 reconnectDue의 cooldown으로 재시도 폭주(락 안 5초 핸드셰이크)를 막는다.
 		DeepgramLiveConnection conn = connections.compute(key, (k, existing) ->
 				(existing == null || existing.reconnectDue(RECONNECT_COOLDOWN_MS))
-						? openConnection(meetingId, effLang, listener) : existing);
+						? openConnection(meetingId, effLang, speakerIndex, listener) : existing);
 		conn.sendAudio(audio);
 	}
 
@@ -68,8 +70,8 @@ public class DeepgramConnectionManager {
 		});
 	}
 
-	private DeepgramLiveConnection openConnection(String meetingId, String lang, TranscriptListener listener) {
-		DeepgramLiveConnection conn = new DeepgramLiveConnection(listener, objectMapper, lang);
+	private DeepgramLiveConnection openConnection(String meetingId, String lang, Integer speakerIndex, TranscriptListener listener) {
+		DeepgramLiveConnection conn = new DeepgramLiveConnection(listener, objectMapper, lang, speakerIndex);
 		if (apiKey.isBlank()) {
 			log.warn("DEEPGRAM_API_KEY 미설정 — STT 비활성 (meeting={})", meetingId);
 			conn.markOpenFailed();   // 재시도해도 계속 실패 → 매 청크 새 객체 생성 억제
