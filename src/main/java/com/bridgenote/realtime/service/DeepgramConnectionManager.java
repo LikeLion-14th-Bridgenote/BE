@@ -41,19 +41,18 @@ public class DeepgramConnectionManager {
 	private final Map<String, DeepgramLiveConnection> connections = new ConcurrentHashMap<>();
 
 	/**
-	 * 오디오 바이트를 (회의, 화자)별 Deepgram 연결로 전송. 화자마다 독립 연결을 유지해
-	 * 서로 다른 webm 스트림이 한 연결에 섞이는 것을 방지한다.
-	 * lang은 해당 화자의 언어(Deepgram URL 파라미터로 사용).
+	 * 오디오 바이트를 (회의, 언어)별 Deepgram 연결로 전송. 같은 언어 화자는 같은 연결을 공유한다.
+	 * 이렇게 하면 한 기기에서 발화자를 전환해도 Deepgram 연결이 유지되어 webm 스트림이 끊기지 않는다.
 	 */
 	public void sendAudio(String meetingId, Integer speakerIndex, String lang, byte[] audio, TranscriptListener listener) {
 		String effLang = (lang != null && !lang.isBlank()) ? lang : language;
-		String spkKey = (speakerIndex != null) ? String.valueOf(speakerIndex) : "unknown";
-		String key = meetingId + "|" + spkKey;
-		// 없거나 닫힌 연결이면 새로 연다(닫힌 연결을 계속 쓰면 전송이 전부 죽어 자막이 끊긴다).
-		// 단 연결 자체가 실패한 경우엔 reconnectDue의 cooldown으로 재시도 폭주(락 안 5초 핸드셰이크)를 막는다.
+		String key = meetingId + "|" + effLang;
+		// 없거나 닫힌 연결이면 새로 연다.
 		DeepgramLiveConnection conn = connections.compute(key, (k, existing) ->
 				(existing == null || existing.reconnectDue(RECONNECT_COOLDOWN_MS))
 						? openConnection(meetingId, effLang, speakerIndex, listener) : existing);
+		// 기존 연결 재사용 시 현재 화자 인덱스를 갱신 (전사 결과에 최신 화자가 태깅되도록)
+		conn.updateSpeakerIndex(speakerIndex);
 		conn.sendAudio(audio);
 	}
 
