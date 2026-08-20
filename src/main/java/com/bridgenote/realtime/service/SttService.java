@@ -59,6 +59,8 @@ public class SttService {
 		// 파라미터로 전달된 speakerIndex를 직접 사용(전역 상태 경유 금지 — 동시 다화자 교차 오염 방지)
 		Integer spk = (speakerIndex != null) ? speakerIndex : speakerState.get(meetingId);
 		String lang = speakerLang(meetingId, spk);
+		log.info("submitAudio meeting={} paramSpk={} resolvedSpk={} lang={} audioLen={}",
+				meetingId, speakerIndex, spk, lang, audio.length);
 		deepgram.sendAudio(meetingId, spk, lang, audio,
 				(sentenceId, sourceLang, text, isFinal, cbSpeakerIndex) ->
 						onTranscript(meetingId, sentenceId, sourceLang, text, isFinal, cbSpeakerIndex));

@@ -9,13 +9,27 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Deepgram 스트리밍 STT 연결 하나(회의 1개). {@link WebSocket.Listener}로 전사 이벤트를 받아
  * {@link TranscriptListener}로 넘긴다. 오디오 전송은 순서 보장을 위해 직렬화한다.
+ * 무음 구간에도 연결이 유지되도록 KeepAlive를 주기적으로 전송한다.
  */
 @Slf4j
 public class DeepgramLiveConnection implements WebSocket.Listener {
+
+	private static final String KEEP_ALIVE_MSG = "{\"type\":\"KeepAlive\"}";
+	private static final long KEEP_ALIVE_INTERVAL_SEC = 8;  // Deepgram inactivity timeout(~30s) 전에 충분히 자주
+	private static final ScheduledExecutorService keepAliveScheduler =
+			Executors.newSingleThreadScheduledExecutor(r -> {
+				Thread t = new Thread(r, "deepgram-keepalive");
+				t.setDaemon(true);
+				return t;
+			});
 
 	private final TranscriptListener transcriptListener;
 	private final ObjectMapper objectMapper;
@@ -34,6 +48,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	                                               // 타임아웃(5s>쿨다운) 실패도 쿨다운에 물린다.
 	private final Object sendLock = new Object();
 	private CompletableFuture<WebSocket> sendChain = CompletableFuture.completedFuture(null);
+	private volatile ScheduledFuture<?> keepAliveFuture;
 
 	public DeepgramLiveConnection(TranscriptListener transcriptListener, ObjectMapper objectMapper, String language, Integer speakerIndex) {
 		this.transcriptListener = transcriptListener;
@@ -48,6 +63,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	public void onOpen(WebSocket webSocket) {
 		this.ws = webSocket;
 		webSocket.request(1);
+		startKeepAlive();
 	}
 
 	@Override
@@ -105,6 +121,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	private void markClosed() {
 		this.closed = true;
 		this.ws = null;   // sendAudio가 죽은 ws로 계속 쏴서 sendChain이 영구 실패하는 것 방지
+		stopKeepAlive();
 	}
 
 	// ===== 전송/종료 =====
@@ -122,6 +139,7 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 
 	/** 스트림 종료 신호 후 연결 닫기. */
 	public void close() {
+		stopKeepAlive();
 		WebSocket w = this.ws;
 		if (w == null) {
 			return;
@@ -131,6 +149,31 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 			w.sendClose(WebSocket.NORMAL_CLOSURE, "closed");
 		} catch (Exception e) {
 			log.debug("Deepgram close 중 오류: {}", e.getMessage());
+		}
+	}
+
+	// ===== KeepAlive =====
+
+	private void startKeepAlive() {
+		keepAliveFuture = keepAliveScheduler.scheduleAtFixedRate(() -> {
+			WebSocket w = this.ws;
+			if (w == null || closed) {
+				stopKeepAlive();
+				return;
+			}
+			try {
+				w.sendText(KEEP_ALIVE_MSG, true);
+			} catch (Exception e) {
+				log.debug("KeepAlive 전송 실패: {}", e.getMessage());
+			}
+		}, KEEP_ALIVE_INTERVAL_SEC, KEEP_ALIVE_INTERVAL_SEC, TimeUnit.SECONDS);
+	}
+
+	private void stopKeepAlive() {
+		ScheduledFuture<?> f = this.keepAliveFuture;
+		if (f != null) {
+			f.cancel(false);
+			this.keepAliveFuture = null;
 		}
 	}
 
