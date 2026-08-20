@@ -129,8 +129,8 @@ public class DeepgramLiveConnection implements WebSocket.Listener {
 	/** 오디오 바이트 전송(직렬화 — 이전 전송 완료 후 다음 전송). */
 	public void sendAudio(byte[] audio) {
 		WebSocket w = this.ws;
-		if (w == null || audio == null || audio.length == 0) {
-			return;
+		if (w == null || audio == null || audio.length < 10) {
+			return;  // 너무 작은 청크는 무시(webm 파싱을 깨뜨리는 쓰레기 방지)
 		}
 		synchronized (sendLock) {
 			sendChain = sendChain.thenCompose(x -> w.sendBinary(ByteBuffer.wrap(audio), true));
