@@ -44,16 +44,24 @@ public class DeepgramConnectionManager {
 	 * 오디오 바이트를 (회의, 언어)별 Deepgram 연결로 전송. 같은 언어 화자는 같은 연결을 공유한다.
 	 * 이렇게 하면 한 기기에서 발화자를 전환해도 Deepgram 연결이 유지되어 webm 스트림이 끊기지 않는다.
 	 */
-	public void sendAudio(String meetingId, Integer speakerIndex, String lang, byte[] audio, TranscriptListener listener) {
+	public boolean sendAudio(String meetingId, Integer speakerIndex, String lang, byte[] audio, TranscriptListener listener) {
+		String key = meetingId + "|stt";  // 회의당 단일 연결 (언어 무관 — Deepgram multi 모드 사용)
 		String effLang = (lang != null && !lang.isBlank()) ? lang : language;
-		String key = meetingId + "|" + effLang;
+		boolean[] reconnected = {false};
 		// 없거나 닫힌 연결이면 새로 연다.
-		DeepgramLiveConnection conn = connections.compute(key, (k, existing) ->
-				(existing == null || existing.reconnectDue(RECONNECT_COOLDOWN_MS))
-						? openConnection(meetingId, effLang, speakerIndex, listener) : existing);
-		// 기존 연결 재사용 시 현재 화자 인덱스를 갱신 (전사 결과에 최신 화자가 태깅되도록)
+		DeepgramLiveConnection conn = connections.compute(key, (k, existing) -> {
+			if (existing == null || existing.reconnectDue(RECONNECT_COOLDOWN_MS)) {
+				reconnected[0] = (existing != null);
+				return openConnection(meetingId, language, speakerIndex, listener); // language = 설정값(multi)
+			}
+			return existing;
+		});
+		// 기존 연결 재사용 시 현재 화자 인덱스를 갱신
 		conn.updateSpeakerIndex(speakerIndex);
-		conn.sendAudio(audio);
+		if (!reconnected[0]) {
+			conn.sendAudio(audio);
+		}
+		return reconnected[0];
 	}
 
 	/** 회의 종료/마지막 참가자 퇴장 시 그 회의의 모든 언어 연결을 닫는다. */
